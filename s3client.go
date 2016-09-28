@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
@@ -27,6 +28,7 @@ type config struct {
 	checksumDisable bool
 	disableSSL      bool
 	pathStyle       bool
+	xmlHeader       bool
 	partSize        int64
 	concurrency     int
 	maxprocs        int
@@ -80,7 +82,14 @@ func uploadFile(c *config) {
 	creds := c.getCreds()
 	config := c.getConfig(creds)
 
-	uploader := s3manager.NewUploader(session.New(config))
+	svc := s3.New(session.New(config))
+	if c.xmlHeader {
+		svc.Handlers.Send.PushFront(func(r *request.Request) {
+			r.HTTPRequest.Header.Add("Accept", "application/xml")
+		})
+	}
+
+	uploader := s3manager.NewUploaderWithClient(svc)
 	uploader.PartSize = c.partSize
 	uploader.Concurrency = c.concurrency
 
@@ -109,7 +118,14 @@ func downloadFile(c *config) {
 	creds := c.getCreds()
 	config := c.getConfig(creds)
 
-	downloader := s3manager.NewDownloader(session.New(config))
+	svc := s3.New(session.New(config))
+	if c.xmlHeader {
+		svc.Handlers.Send.PushFront(func(r *request.Request) {
+			r.HTTPRequest.Header.Add("Accept", "application/xml")
+		})
+	}
+
+	downloader := s3manager.NewDownloaderWithClient(svc)
 	downloader.PartSize = c.partSize
 	downloader.Concurrency = c.concurrency
 
@@ -142,6 +158,7 @@ func main() {
 	flag.BoolVar(&c.checksumDisable, "nocsum", false, "disable checksum for uploads")
 	flag.BoolVar(&c.disableSSL, "nossl", false, "disable https")
 	flag.BoolVar(&c.pathStyle, "pathstyle", false, "force path style requests")
+	flag.BoolVar(&c.xmlHeader, "xmlheader", false, "wierd server needs this header added")
 	flag.Int64Var(&c.partSize, "partsize", 64*1024*1024, "part size for uploads")
 	flag.IntVar(&c.concurrency, "concurrency", 24, "upload concurrency for multipart uploads and downloads")
 	flag.IntVar(&c.maxprocs, "maxprocs", 0, "GOMAXPROCS")
