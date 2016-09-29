@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -12,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/benmcclelland/tarstream"
 	"github.com/facebookgo/flagconfig"
 )
 
@@ -24,6 +27,7 @@ type config struct {
 	filePath        string
 	objectPath      string
 	operation       string
+	filelist        string
 	checksumDisable bool
 	disableSSL      bool
 	pathStyle       bool
@@ -67,15 +71,43 @@ func (c *config) getConfig(creds *credentials.Credentials) *aws.Config {
 }
 
 func uploadFile(c *config) {
-	fi, err := os.Lstat(c.filePath)
-	if err != nil {
-		log.Fatal(err)
+	var size int64
+	var upinfo *s3manager.UploadInput
+
+	if c.filelist == "" {
+		fi, err := os.Lstat(c.filePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		size = fi.Size()
+		file, err := os.Open(c.filePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+		upinfo = &s3manager.UploadInput{
+			Body:   file,
+			Bucket: &c.bucket,
+			Key:    &c.objectPath,
+		}
+	} else {
+		tarfile, info, err := tarstream.GenVec(strings.Split(c.filelist, ","))
+		if err != nil {
+			log.Fatal(err)
+		}
+		size = tarfile.GetSize()
+		upinfo = &s3manager.UploadInput{
+			Body:   &tarfile,
+			Bucket: &c.bucket,
+			Key:    &c.objectPath,
+		}
+
+		fmt.Println("### TAR INFO ###")
+		for _, i := range info {
+			fmt.Println(" File:", i.Name, "Offset:", i.Offset)
+		}
+		fmt.Println("################")
 	}
-	file, err := os.Open(c.filePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
 
 	creds := c.getCreds()
 	config := c.getConfig(creds)
@@ -86,17 +118,13 @@ func uploadFile(c *config) {
 
 	start := time.Now()
 
-	result, err := uploader.Upload(&s3manager.UploadInput{
-		Body:   file,
-		Bucket: &c.bucket,
-		Key:    &c.objectPath,
-	})
+	result, err := uploader.Upload(upinfo)
 	elapsed := time.Since(start)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println("Uploaded:", result.Location, float64(fi.Size()/1048576)/elapsed.Seconds(), "MB/s")
+	log.Println("Uploaded:", result.Location, float64(size/1048576)/elapsed.Seconds(), "MB/s")
 }
 
 func downloadFile(c *config) {
@@ -139,6 +167,7 @@ func main() {
 	flag.StringVar(&c.bucket, "bucket", "", "bucket for target operation")
 	flag.StringVar(&c.endpoint, "endpoint", "", "endpoint if different than s3.amazonaws.com in the form of host:port")
 	flag.StringVar(&c.awsRegion, "region", "us-west-2", "AWS region")
+	flag.StringVar(&c.filelist, "filelist", "", "comma sep file list, if defined will upload tarball")
 	flag.BoolVar(&c.checksumDisable, "nocsum", false, "disable checksum for uploads")
 	flag.BoolVar(&c.disableSSL, "nossl", false, "disable https")
 	flag.BoolVar(&c.pathStyle, "pathstyle", false, "force path style requests")
