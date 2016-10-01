@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/benmcclelland/tario"
 	"github.com/benmcclelland/tarstream"
 	"github.com/facebookgo/flagconfig"
 )
@@ -25,6 +28,8 @@ type config struct {
 	bucket          string
 	endpoint        string
 	filePath        string
+	fileSize        string
+	fileOffset      string
 	objectPath      string
 	operation       string
 	filelist        string
@@ -127,6 +132,74 @@ func uploadFile(c *config) {
 	log.Println("Uploaded:", result.Location, float64(size/1048576)/elapsed.Seconds(), "MB/s")
 }
 
+func downloadOffset(c *config) {
+	//file, err := os.Create(c.filePath)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//defer file.Close()
+
+	//tw := tario.NewWriter(file)
+	tw := tario.NewFileWriter()
+	defer tw.Close()
+
+	creds := c.getCreds()
+	config := c.getConfig(creds)
+
+	//downloader := s3manager.NewDownloader(session.New(config))
+	//downloader.PartSize = c.partSize
+	//downloader.Concurrency = c.concurrency
+	sess, err := session.NewSession(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	svc := s3.New(sess)
+
+	size, err := strconv.ParseInt(c.fileSize, 10, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	offset, err := strconv.ParseInt(c.fileOffset, 10, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	endoffset := offset + size + tario.TARHEADERSIZE - 1
+	rangestring := fmt.Sprintf("bytes=%v-%v", c.fileOffset, endoffset)
+	fmt.Println("RANGE:", rangestring)
+
+	start := time.Now()
+
+	//size, err = downloader.Download(tw, &s3.GetObjectInput{
+	//	Bucket: &c.bucket,
+	//	Key:    &c.objectPath,
+	//	Range:  &rangestring,
+	//})
+
+	resp, err := svc.GetObject(&s3.GetObjectInput{
+		Bucket: &c.bucket,
+		Key:    &c.objectPath,
+		Range:  &rangestring,
+	})
+	if err != nil {
+		log.Println(resp)
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	elapsed := time.Since(start)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = io.Copy(tw, resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("Downloaded:", c.filePath, float64(size/1048576)/elapsed.Seconds(), "MB/s")
+}
+
 func downloadFile(c *config) {
 	file, err := os.Create(c.filePath)
 	if err != nil {
@@ -143,7 +216,6 @@ func downloadFile(c *config) {
 
 	start := time.Now()
 
-	// TODO GetObjectInput can to range get
 	size, err := downloader.Download(file, &s3.GetObjectInput{
 		Bucket: &c.bucket,
 		Key:    &c.objectPath,
@@ -163,6 +235,8 @@ func main() {
 	flag.StringVar(&c.awsSecret, "secret", "", "AWS secret key or use env AWS_SECRET_ACCESS_KEY")
 	flag.StringVar(&c.operation, "op", "upload", "operation to do upload/download")
 	flag.StringVar(&c.filePath, "filepath", "", "path for local file to read/write")
+	flag.StringVar(&c.fileSize, "filesize", "", "size of file at given offset")
+	flag.StringVar(&c.fileOffset, "fileoffset", "", "offset of file in tar")
 	flag.StringVar(&c.objectPath, "object", "", "path for object read/write")
 	flag.StringVar(&c.bucket, "bucket", "", "bucket for target operation")
 	flag.StringVar(&c.endpoint, "endpoint", "", "endpoint if different than s3.amazonaws.com in the form of host:port")
@@ -187,7 +261,11 @@ func main() {
 	case "upload":
 		uploadFile(c)
 	case "download":
-		downloadFile(c)
+		if c.fileOffset == "" {
+			downloadFile(c)
+		} else {
+			downloadOffset(c)
+		}
 	default:
 		log.Fatal("operation must be one of upload or download")
 	}
