@@ -109,7 +109,7 @@ func uploadFile(c *config) {
 
 		fmt.Println("### TAR INFO ###")
 		for _, i := range info {
-			fmt.Println(" File:", i.Name, "Offset:", i.Offset)
+			fmt.Println(" File:", i.Name, "Offset:", i.Offset, "Size:", i.Size)
 		}
 		fmt.Println("################")
 	}
