@@ -133,22 +133,12 @@ func uploadFile(c *config) {
 }
 
 func downloadOffset(c *config) {
-	//file, err := os.Create(c.filePath)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//defer file.Close()
-
-	//tw := tario.NewWriter(file)
 	tw := tario.NewFileWriter()
 	defer tw.Close()
 
 	creds := c.getCreds()
 	config := c.getConfig(creds)
 
-	//downloader := s3manager.NewDownloader(session.New(config))
-	//downloader.PartSize = c.partSize
-	//downloader.Concurrency = c.concurrency
 	sess, err := session.NewSession(config)
 	if err != nil {
 		log.Fatal(err)
@@ -169,12 +159,6 @@ func downloadOffset(c *config) {
 	fmt.Println("RANGE:", rangestring)
 
 	start := time.Now()
-
-	//size, err = downloader.Download(tw, &s3.GetObjectInput{
-	//	Bucket: &c.bucket,
-	//	Key:    &c.objectPath,
-	//	Range:  &rangestring,
-	//})
 
 	resp, err := svc.GetObject(&s3.GetObjectInput{
 		Bucket: &c.bucket,
