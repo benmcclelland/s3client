@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/benmcclelland/s3v2"
 	"github.com/benmcclelland/tario"
 	"github.com/benmcclelland/tarstream"
 	"github.com/facebookgo/flagconfig"
@@ -36,6 +37,7 @@ type config struct {
 	checksumDisable bool
 	disableSSL      bool
 	pathStyle       bool
+	v2auth          bool
 	partSize        int64
 	concurrency     int
 	maxprocs        int
@@ -117,7 +119,19 @@ func uploadFile(c *config) {
 	creds := c.getCreds()
 	config := c.getConfig(creds)
 
-	uploader := s3manager.NewUploader(session.New(config))
+	var uploader *s3manager.Uploader
+	if c.v2auth {
+		sess, err := session.NewSession(config)
+		if err != nil {
+			log.Fatal(err)
+		}
+		svc := s3.New(sess)
+		svc.Handlers.Sign.Clear()
+		svc.Handlers.Sign.PushBackNamed(s3v2.SignRequestHandler)
+		uploader = s3manager.NewUploaderWithClient(svc)
+	} else {
+		uploader = s3manager.NewUploader(session.New(config))
+	}
 	uploader.PartSize = c.partSize
 	uploader.Concurrency = c.concurrency
 
@@ -144,6 +158,10 @@ func downloadOffset(c *config) {
 		log.Fatal(err)
 	}
 	svc := s3.New(sess)
+	if c.v2auth {
+		svc.Handlers.Sign.Clear()
+		svc.Handlers.Sign.PushBackNamed(s3v2.SignRequestHandler)
+	}
 
 	size, err := strconv.ParseInt(c.fileSize, 10, 64)
 	if err != nil {
@@ -194,7 +212,20 @@ func downloadFile(c *config) {
 	creds := c.getCreds()
 	config := c.getConfig(creds)
 
-	downloader := s3manager.NewDownloader(session.New(config))
+	var downloader *s3manager.Downloader
+	if c.v2auth {
+		sess, err := session.NewSession(config)
+		if err != nil {
+			log.Fatal(err)
+		}
+		svc := s3.New(sess)
+		svc.Handlers.Sign.Clear()
+		svc.Handlers.Sign.PushBackNamed(s3v2.SignRequestHandler)
+		downloader = s3manager.NewDownloaderWithClient(svc)
+	} else {
+		downloader = s3manager.NewDownloader(session.New(config))
+	}
+
 	downloader.PartSize = c.partSize
 	downloader.Concurrency = c.concurrency
 
@@ -229,6 +260,7 @@ func main() {
 	flag.BoolVar(&c.checksumDisable, "nocsum", false, "disable checksum for uploads")
 	flag.BoolVar(&c.disableSSL, "nossl", false, "disable https")
 	flag.BoolVar(&c.pathStyle, "pathstyle", false, "force path style requests")
+	flag.BoolVar(&c.v2auth, "v2auth", false, "enable v2 auth for s3")
 	flag.Int64Var(&c.partSize, "partsize", 64*1024*1024, "part size for uploads")
 	flag.IntVar(&c.concurrency, "concurrency", 24, "upload concurrency for multipart uploads and downloads")
 	flag.IntVar(&c.maxprocs, "maxprocs", 0, "GOMAXPROCS")
