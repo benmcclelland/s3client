@@ -2,11 +2,6 @@
 
 s3client is a simple client for uploading and downloading s3 objects using the aws-sdk-go s3manager for high performance concurrent transfers.
 
-The aws-sdk-go that has been vendored in is using the v2 auth modifications found here:
-https://github.com/benmcclelland/aws-sdk-go/tree/ben/s3v2
-
-There is not yet a flag to toggle v2/v4 auth, so for v4 auth just vendor in the aws sdk or remove aws-sdk-go from the vendor directory completely.
-
 This also makes use of the facebookgo flagconfig library that allows specifying option from a config file.  So you can either run it with options like:  
 `./s3client -filepath=myfile -object=myobject -bucket=mybucket -maxprocs=48 -concurrency=48`
 
