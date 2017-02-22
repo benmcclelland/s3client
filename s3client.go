@@ -40,8 +40,8 @@ type config struct {
 	v2auth          bool
 	partSize        int64
 	concurrency     int
-	maxprocs        int
-	debug           bool
+	//maxprocs        int
+	debug bool
 }
 
 func (c *config) getCreds() *credentials.Credentials {
@@ -263,14 +263,22 @@ func main() {
 	flag.BoolVar(&c.v2auth, "v2auth", false, "enable v2 auth for s3")
 	flag.Int64Var(&c.partSize, "partsize", 64*1024*1024, "part size for uploads")
 	flag.IntVar(&c.concurrency, "concurrency", 24, "upload concurrency for multipart uploads and downloads")
-	flag.IntVar(&c.maxprocs, "maxprocs", 0, "GOMAXPROCS")
+	//flag.IntVar(&c.maxprocs, "maxprocs", 0, "GOMAXPROCS")
 	flag.BoolVar(&c.debug, "debug", false, "enable debug output")
 	flag.Parse()
 	flagconfig.Parse()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	if c.maxprocs > 0 {
-		runtime.GOMAXPROCS(c.maxprocs)
+	runtime.GOMAXPROCS(c.concurrency + 1)
+
+	if c.bucket == "" {
+		log.Fatal("bucket undefined, must specify bucket for operation")
+	}
+	if c.filePath == "" && c.filelist == "" {
+		log.Fatal("local file(s) undefined, must specify either filepath or filelist")
+	}
+	if c.objectPath == "" {
+		log.Fatal("object undefined, must specify object name")
 	}
 
 	switch c.operation {
